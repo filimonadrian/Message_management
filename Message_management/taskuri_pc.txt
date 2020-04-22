@@ -1,0 +1,69 @@
+==============================Taskuri Pc==============================
+
+- trebuie sa fie comanda exit in  server 
+- cand se face exit trebuie inchisa conexiunea serverului si 
+a tuturor clientilor
+
+Client: 
+
+- sa stie sa trimita o cerere de tip subscribe/unsubscribe 
+---->fac o structura de tip subscription -> SF, (un)subscribe;
+
+
+Topicul exista deja? 
+
+- sa isi stie id-ul (este primit ca argument in linia de comanda 
+    (pentru id-ul de utilizator - 10 caractere ascii)
+----->adaug id-ul in structura de subscription
+        (pentru userul id, o sa am o subscriptie cu sf..)
+        (trebuie si camp de online/offline )
+
+---->socketul si id-ul userului trebuie sa fie in legatura directa
+--->mesajul de pe topicul x - este trimis catre toti userii inscrisi, dar 
+    eu stiu doar id ( socketul se schimba, dar id-ul este acealasi)
+-->un array de structuri de tip user ar fi util
+        -->sortat dupa id, sa contina si socketul si ultimul mesaj primit
+        -->cand se conecteaza din nou, actualizez socketul, iterez prin 
+        array-ul de mesaje si trimit tot de la indexul din structura 
+
+
+----> ar fi util un Hashmap pentru ca id-ul este unic
+----> sau array ordonat cu qsort si binary search
+----> NU scot id-urile din array
+
+Server: 
+- trebuie sa deschid si socketi tcp, si udp (momentan 
+am doar socketi tcp)
+
+-->am nevoie de o structura de tip mesaj 
+        -->char[50] topic
+        --> uint8_t tip_Date (WTF IS THAT ?)
+        -->char[1500] continut
+
+
+- rezolvarea topicilor ( cum retin un topic? )
+--->O varianta ar fi sa le salvez ca un array de liste de topicuri
+--->array ul contine capul de lista (numele topicului) si fiecare 
+--->nod de tip mesaj va avea un numar de secventa 
+--->intotdeauna se salveaza numar de secventa la care a ramas fiecare user
+--->cand acesta se conecteaza din nou, se va trimite din lista in continuare
+--->de la indexul respectiv 
+
+---> daca e client nou, il adaug la topicul respectiv
+
+Probleme! -  ocupa prea multa memorie (chiar daca se presupune 
+ca am memorie nelimitata)
+
+
+
+- retinerea userilor conectati(trebuie sa retin si faptul ca sunt 
+abonati, si Sf-ul(0/1);
+
+
+
+
+
+hasmap : topic, client 
+
+
+
