@@ -1,192 +1,345 @@
 #include "server.h"
+#include "server_helper.h"
 
-void usage(char *file)
-{
-	fprintf(stderr, "Usage: %s server_port\n", file);
-	exit(0);
+void print_tables(unordered_map<string, int> id_sock,
+                  unordered_map<string, vector<news_status>> user_subscription,
+                  unordered_map<string, vector<tcp_msg>> queue_msg,
+                  unordered_map<string, vector<int>> active_users) {
+    cout << "id_sock:\n";
+    for (auto element : id_sock) {
+        cout << element.first << " " << element.second << endl;
+    }
+    cout << endl << endl;
+    cout << "user_subscription:\n";
+
+// pune sf ul in structura !!!
+
+    for (auto element : user_subscription) {
+        cout << element.first << " ";
+        for (auto el : element.second) {
+            cout << el.last_msg << " " << el.topic << " " << el.sf << "__";
+        }
+    }
+
+
+    cout << endl<< endl;
+    cout << "queue_msg:\n";
+
+    for (auto element : queue_msg) {
+        cout << element.first << " ";
+        for (auto el : element.second) {
+            cout << el.topic << " " << el.type << " " << el.payload << "__";
+        }
+    }
+    cout << endl<<endl;
+    cout << "active_users:\n";
+
+    for (auto element : active_users) {
+        cout << element.first << " ";
+        for (auto el : element.second) {
+            cout << el << "__";
+        }
+    }
+    cout << endl << endl;
 }
-
-static inline void clear_input_buffer() {
-	char c = 0;
-	while ((c = getchar()) != '\n'){}
-}
-
 
 int main(int argc, char *argv[]) {
 
-	int sockfd, newsockfd, portno;
-	char buffer[BUFLEN];
-	struct sockaddr_in serv_addr, cli_addr;
-	int n, i, ret;
-	socklen_t clilen;
+    int tcp_sock, udp_sock, newsockfd, portno;
+    char buffer[BUFLEN];
+    struct sockaddr_in tcp_addr, udp_addr, from_station;
+    socklen_t source_len;
+    string topic, user_id;
+    user_msg message;
 
-	fd_set read_fds;	// multimea de citire folosita in select()
-	fd_set tmp_fds;		// multime folosita temporar
-	int fdmax;			// valoare maxima fd din multimea read_fds
+    int i, ret;
+    int received_data;
+    // vector<tcp_client> tcp_users;
 
-	if (argc < 2) {
-		usage(argv[0]);
-	}
+    /* <user_id> and <socket> to update file descriptor*/
+    unordered_map<string, int> id_sock;
 
-	// se goleste multimea de descriptori de citire (read_fds) si multimea temporara (tmp_fds)
-	FD_ZERO(&read_fds);
-	FD_ZERO(&tmp_fds);
+    /* <user_id> and all associated topics */
+    // unordered_map<string, string> users_topic;
 
-	// deschide socket TCP
-	// trebuie sa deschid si socket UDP
-	sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sockfd < 0) {
-		perror("Probleme cu crearea socketului");
-	}
+    /*<user_id> and <vector_news> with topic, sf, and index of last send message*/
+    /* used to check if user wants all informations about topic; keep last message sent */
+    unordered_map<string, vector<news_status>> user_subscription;
 
-	portno = atoi(argv[1]);
-	if (portno < 0) {
-		perror("Problema cu portul");
-	}
+    /*<topic_name> and vector of messages ready to send*/
+    unordered_map<string, vector<tcp_msg>> queue_msg;
 
-	memset((char *) &serv_addr, 0, sizeof(serv_addr));
-	serv_addr.sin_family = AF_INET;
-	serv_addr.sin_port = htons(portno);
-	serv_addr.sin_addr.s_addr = INADDR_ANY;
-	int enable = 1;
+    /*all active connections for a topic */
+    unordered_map<string, vector<int>> active_users;
 
-// this socket is always free(for repeted tests)
- if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) == -1) {
-   perror("setsocketopt");
-   exit(1);
- }
-	ret = bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(struct sockaddr));
-	if (ret < 0) {
-		perror("Probleme bind");
-	}
+    fd_set read_fds; // multimea de citire folosita in select()
+    fd_set tmp_fds;  // multime folosita temporar
+    int fdmax;       // valoare maxima fd din multimea read_fds
 
-	ret = listen(sockfd, MAX_CLIENTS);
-	if (ret < 0) {
-		perror("Probleme listen");
-	}
+    if (argc < 2) {
+        usage(argv[0]);
+    }
 
-	// se adauga noul file descriptor (socketul pe care se asculta conexiuni) in multimea read_fds
-	FD_SET(sockfd, &read_fds);
-	// se adauga file descriptor-ul pentru citirea de la stdin
-	FD_SET(0, &read_fds);
+    // se goleste multimea de descriptori de citire (read_fds) si multimea temporara (tmp_fds)
+    FD_ZERO(&read_fds);
+    FD_ZERO(&tmp_fds);
 
-	fdmax = sockfd;
+    /* create TCP socket */
+    tcp_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (tcp_sock < 0) {
+        perror("Can't open TCP socket");
+    }
+    /* create UDP socket */
+    udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udp_sock < 0) {
+        perror("Can't open UDP socket");
+    }
 
-	mesaj msg[15];
-	tcp_client tcp_subscribers[15];
-		int j = 0;
+    portno = atoi(argv[1]);
+    if (portno < 0) {
+        perror("Can't use this port");
+    }
 
-	while (1) {
-		tmp_fds = read_fds; 
-		
-		ret = select(fdmax + 1, &tmp_fds, NULL, NULL, NULL);
-		if (ret < 0) {
-			perror("Probleme select");
-		}
+    memset((char *)&tcp_addr, 0, sizeof(tcp_addr));
+    tcp_addr.sin_family = AF_INET;
+    tcp_addr.sin_port = htons(portno);
+    tcp_addr.sin_addr.s_addr = INADDR_ANY;
+    int enable = 1;
 
-		if (FD_ISSET(0, &tmp_fds)) {
-			char exit_message[10];
-			memset(exit_message, 0, 10);
-			fgets(exit_message, 6, stdin);
-			
-			if (exit_message[5] == 0 && strncmp(exit_message, "exit", 4) == 0){
-				printf("Exiting..\n");
-				break;
-			} else {
-				printf("That is not a valid command -_- \n");
-				continue;
-			}
-			clear_input_buffer();
+    memset((char *)&udp_addr, 0, sizeof(udp_addr));
+    udp_addr.sin_family = AF_INET;
+    udp_addr.sin_port = htons(portno);
+    udp_addr.sin_addr.s_addr = INADDR_ANY;
 
-		}
+    // this socket is always free(for repeted tests)
+    if (setsockopt(tcp_sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) == -1) {
+        perror("setsocketopt");
+        exit(1);
+    }
+    ret = bind(tcp_sock, (struct sockaddr *)&tcp_addr, sizeof(struct sockaddr));
+    if (ret < 0) {
+        perror("TCP can't bind");
+    }
 
-		for (i = 0; i <= fdmax; i++) {
-	
-			if (FD_ISSET(i, &tmp_fds)) {
-				if (i == sockfd) {
-					// a venit o cerere de conexiune pe socketul inactiv (cel cu listen),
-					// pe care serverul o accepta
-					clilen = sizeof(cli_addr);
-					newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-					
-					if (newsockfd < 0) {
-						perror("Probleme cu accept-ul");
-					}
+    ret = bind(udp_sock, (struct sockaddr *)&udp_addr, sizeof(struct sockaddr));
+    if (ret < 0) {
+        perror("UDP can't bind");
+    }
 
-					tcp_subscribers[j].sockfd = newsockfd;
-					msg[j].name = (int)newsockfd;
-					msg[j].sockfd = newsockfd;
+    ret = listen(tcp_sock, MAX_CLIENTS);
+    if (ret < 0) {
+        perror("TCP can't listen");
+    }
 
+    /* add the socket that listen for tcp connections*/
+    FD_SET(tcp_sock, &read_fds);
+    /* add the socket for udp connections */
+    FD_SET(udp_sock, &read_fds);
+    /*add the file descriptor that read from stdin */
+    FD_SET(0, &read_fds);
 
-					n = recv(newsockfd, buffer, sizeof(buffer), 0);
-					if (n < 0) {
-						perror("Can't receive user id!");
-					}
-					
-					tcp_msg m;
-					memcpy(&m, buffer, sizeof(tcp_msg));
-					strcpy(tcp_subscribers[j].client_id, m.client_id);
+    fdmax = tcp_sock;
 
-					j++;
-					// se adauga noul socket intors de accept() la multimea descriptorilor de citire
-					FD_SET(newsockfd, &read_fds);
-					if (newsockfd > fdmax) { 
-						fdmax = newsockfd;
-					}
+    mesaj msg[15];
 
+    tcp_client tcp_subscribers[15];
+    tcp_client user;
 
-					printf("New client %s, connected from %d:%s\n",
-							tcp_subscribers[j - 1].client_id, ntohs(cli_addr.sin_port), inet_ntoa(cli_addr.sin_addr));
-				} else {
-					// s-au primit date pe unul din socketii de client,
-					// asa ca serverul trebuie sa le receptioneze
-					memset(buffer, 0, BUFLEN);
-					n = recv(i, buffer, sizeof(buffer), 0);
-					if (n < 0) {
-						perror("Receive topics problems");
-					}
+    int j = 0;
 
-					int send_msg;
+    while (1) {
+        tmp_fds = read_fds;
 
-					//	trimit mesajul catre buffer[0]
-					// printf("incerc sa caut clientul ce trebuie sa primeasca mesajul\n");
-					for (int k = 0; k < j; k++){
-						printf("name: %d, socket: %d\n", msg[k].name, msg[k].sockfd);
-						
-						if (msg[k].name == (buffer[0] - 48)){
-							printf("trimit mesajul la %d %d\n", msg[k].name, msg[k].sockfd);
-							send_msg = send(msg[k].name, buffer, strlen(buffer), 0);
-							break;
-						}
-						
-//aici ar trebui sa modific 
-						// if (strcmp(tcp_subscribers[k].client_id, buffer[0])) {
-						// 	printf("Send message to %s ", tcp_subscribers[k].client_id);
-						// 	send_msg = send(tcp_subscribers[k].sockfd, buffer, strlen(buffer), 0);
-						// 	break;
-						// }
-					}
+        ret = select(fdmax + 1, &tmp_fds, NULL, NULL, NULL);
+        if (ret < 0) {
+            perror("Probleme select");
+        }
 
-					if (send_msg < 0) {
-						perror("send_message to client");
-					}
-					
-					if (n == 0) {
-						// conexiunea s-a inchis
-						printf("Socket-ul client %d a inchis conexiunea\n", i);
-						close(i);
-						
-						// se scoate din multimea de citire socketul inchis 
-						FD_CLR(i, &read_fds);
-					} else {
-						printf ("clientul_%d: %s \n", i, buffer);
-					}
-				}
-			}
-		}
-	}
+        if (FD_ISSET(0, &tmp_fds)) {
+            if (close_server(read_fds, fdmax)) {
+                break;
+            } else {
+                continue;
+            }
+            //clear_input_buffer();
+        }
 
-	close(sockfd);
+        for (i = 1; i <= fdmax; i++) {
 
-	return 0;
+            if (FD_ISSET(i, &tmp_fds)) {
+                if (i == udp_sock) {
+
+                    memset(buffer, 0, BUFLEN);
+                    source_len = sizeof(from_station);
+                    received_data = recvfrom(udp_sock, buffer, BUFLEN, 0, (struct sockaddr *)&from_station, &source_len);
+                    if (received_data < 0) {
+                        perror("Can't receive udp message");
+                    }
+                    /* unwrap the udp message */
+                    udp_msg message;
+                    tcp_msg ready_to_send;
+                    memcpy(&message, buffer, sizeof(message));
+                    ready_to_send.udp_port = ntohs(from_station.sin_port);
+                    /*ip is uint32_t !!!! */
+                    ready_to_send.udp_ip = ntohl(from_station.sin_addr.s_addr);
+
+                    strcpy(ready_to_send.topic, message.topic);
+                    strcpy(ready_to_send.payload, message.payload);
+                    ready_to_send.type = message.type;
+
+                    string topic = message.topic;
+
+                    /* if it's a new topic, create new entry in queue and in active_users */
+                    if (queue_msg.find(topic) == queue_msg.end()) {
+                        queue_msg.emplace(topic, vector<tcp_msg>());
+
+                        active_users.emplace(topic, vector<int>());
+                    } else {
+                        /* if topic exists, send message to active users and
+                        push message to the msg_queue(for other users) */
+                        queue_msg[topic].push_back(ready_to_send);
+                        /* send to all users */
+                        int check_send, len = active_users[topic].size();
+                        memcpy(buffer, &ready_to_send, sizeof(ready_to_send));
+                        for (int k = 0; k < len; k++) {
+                            check_send = send(active_users[topic][k], buffer, BUFLEN, 0);
+                            if (check_send < 0) {
+                                perror("Can't send message to active user");
+                            }
+                        }
+                    }
+
+                } else if (i == tcp_sock) {
+
+                    /* new connection request 
+						server accepts the request */
+                    source_len = sizeof(from_station);
+                    newsockfd = accept(tcp_sock, (struct sockaddr *)&from_station, &source_len);
+
+                    if (newsockfd < 0) {
+                        perror("Can't accept new clients!");
+                    }
+
+                    /* Now i need the user id*/
+
+                    /*clean buffer*/
+                    memset(buffer, 0, BUFLEN);
+                    received_data = recv(newsockfd, buffer, sizeof(buffer), 0);
+                    if (received_data < 0) {
+                        perror("Can't receive user id!");
+                    }
+                    /*unwrap the message */
+                    /*The buffer contains just THE USER ID */
+                    //!!!!- probably 2 long user id
+                    string user_id = buffer;
+                    /*useless --> just for testing */
+                    strcpy(tcp_subscribers[j].client_id, buffer);
+
+                    /*if user_id doesn't exist, create a new entry */
+                    if (id_sock.find(user_id) == id_sock.end()) {
+
+                        id_sock.insert({user_id, newsockfd});
+                        user_subscription.insert(make_pair(user_id, vector<news_status>()));
+                        /*same shit */
+                        user_subscription.emplace(user_id, vector<news_status>());
+
+                        /*else the user_id is back online -->update sockfd, tick as active user, send messages */
+                    } else {
+                        id_sock[user_id] = newsockfd;
+                        /*send each message which has sf on */
+                        /* for each topic of this new user */
+                        for (auto element : user_subscription[user_id]) {
+                            /*tick as active user for current topic */
+                            (active_users[element.topic]).push_back(newsockfd);
+                            if (element.sf == SF_ON) {
+                                /* send last messages */
+                                int len = queue_msg[element.topic].size();
+                                for (int k = element.last_msg; k < len; k++) {
+                                    memset(buffer, 0, BUFLEN);
+                                    vector<tcp_msg> msg = queue_msg[element.topic];
+                                    memcpy(buffer, &msg[i], BUFLEN);
+                                    int s = send(newsockfd, buffer, BUFLEN, 0);
+                                    if (s < 0) {
+                                        perror("Can't send stored messages");
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    tcp_subscribers[j].sockfd = newsockfd;
+
+                    msg[j].name = (int)newsockfd;
+                    msg[j].sockfd = newsockfd;
+
+                    j++;
+                    // se adauga noul socket intors de accept() la multimea descriptorilor de citire
+                    FD_SET(newsockfd, &read_fds);
+                    if (newsockfd > fdmax) {
+                        fdmax = newsockfd;
+                    }
+
+                    cout << "New client " << user_id << " connected from " << ntohs(from_station.sin_port);
+                    cout << ":" << inet_ntoa(from_station.sin_addr) << endl;
+
+                    print_tables(id_sock, user_subscription, queue_msg, active_users);
+
+                } else {
+                    /* i've received data on an existing socket
+						the server must interpret them */
+                    memset(buffer, 0, BUFLEN);
+                    received_data = recv(i, buffer, sizeof(buffer), 0);
+                    if (received_data < 0) {
+                        perror("Receive TCP messages problem");
+                    }
+
+                    memset(&message, 0, sizeof(message));
+                    memcpy(&message, buffer, sizeof(message));
+                    printf("command: %d, topic: %s, sf: %d\n", message.type, message.topic, message.sf);
+
+                    topic = message.topic;
+                    user_id = get_id_for_socket(i, id_sock);
+
+                    if (message.type == SUBSCRIBE) {
+                        news_status news;
+
+                        bool remaining_msg = subscribe(id_sock, user_subscription, queue_msg,
+                                                       active_users, news, user_id, message.topic, message.sf);
+                        if (!remaining_msg) {
+                            send_stored_messages(id_sock, user_subscription, queue_msg, user_id, topic);
+                        }
+                    } else if (message.type == UNSUBSCRIBE) {
+                        unsubscribe(id_sock, user_subscription, queue_msg, active_users, user_id, topic);
+                    }
+
+                    print_tables(id_sock, user_subscription, queue_msg, active_users);
+
+                    if (received_data == 0) {
+                        // the connection has ended
+                        //problems with cout
+                        cout << "Clientul " << get_id_for_socket(i, id_sock) << " a inchis conexiunea";
+                        //printf("Clientul %s a inchis conexinea\n", get_id_for_socket(i, id_sock));
+                        //printf("Socket-ul client %d a inchis conexiunea\n", i);
+
+                        disconnect_user(id_sock, user_subscription, queue_msg, active_users, i);
+                        close(i);
+
+                        // se scoate din multimea de citire socketul inchis
+                        FD_CLR(i, &read_fds);
+                    } else {
+                        // printf("clientul_%d: %s \n", i, buffer);
+                    }
+                }
+            }
+        }
+    }
+
+    id_sock.clear();
+    user_subscription.clear();
+    queue_msg.clear();
+    active_users.clear();
+    close(tcp_sock);
+    close(udp_sock);
+
+    return 0;
 }
