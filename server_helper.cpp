@@ -40,12 +40,13 @@ void clear_input_buffer() {
 }
 
 /*user_id for this socket*/
-string get_id_for_socket(int sock, unordered_map<string, int> clients) {
-    for (pair<string, int> element : clients) {
-        if (sock == element.second) {
+string get_id_for_socket(int sock, unordered_map<string, int> id_sock) {
+    for (auto element : id_sock) {
+        if (element.second == sock) {
             return element.first;
         }
     }
+
     return NULL;
 }
 
@@ -90,12 +91,12 @@ void disconnect_user(unordered_map<string, int> &id_sock,
         perror("Can't find id - request to exit");
     }
     /* for all topics of the user(user_subscription) */
-    for (auto element : user_subscription[id]) {
+    for (auto &element : user_subscription[id]) {
         /*user who disconects has all messages send */
-        element.last_msg = queue_msg[element.topic].size();
+        element.last_msg = queue_msg[element.topic].size() - 1;
         /*sort the vector */
         sort(active_users[element.topic].begin(), active_users[element.topic].end());
-        /*apply binary search */
+        /*apply binary search - delete socket of the user for every topic */
         int index = get_index_of_socket(active_users[element.topic],
                                         0, active_users[element.topic].size() - 1, sockfd);
         active_users[element.topic].erase(active_users[element.topic].begin() + index);
@@ -110,33 +111,31 @@ bool subscribe(unordered_map<string, int> &id_sock,
                unordered_map<string, vector<int>> &active_users,
                news_status &news, string user_id, string topic, int sf) {
 
-    bool new_messages = false;
     int index = 0;
+
+    /* is already subscribed? */
+    /* if index > 0 => it is already subscribed */
+    index = get_index_of_topic(user_subscription, user_id, topic);
+    if (index > 0) {
+        return false;
+    }
+
     /*check if topic already exists */
     if (queue_msg.find(topic) == queue_msg.end()) {
-        new_messages = false;
+
         queue_msg.emplace(topic, vector<tcp_msg>());
         active_users.emplace(topic, vector<int>());
-        /*make user available to receive message for this topic */
-        active_users[topic].push_back(id_sock[user_id]);
-    } else {
-        /* is already subscribed? */
-        
-        /* if index > 0 => it is already subscribed */
-        index = get_index_of_topic(user_subscription, user_id, topic);
-        if (index > 0) {
-            return false;
-        }
-        
-        new_messages = true;
     }
+
+    /*make user available to receive message for this topic */
+    active_users[topic].push_back(id_sock[user_id]);
 
     news.last_msg = 0;
     news.sf = sf;
     news.topic = topic;
     user_subscription[user_id].push_back(news);
 
-    return new_messages;
+    return true;
 }
 
 /* remove the topic from user_subscription and the socket from socket active_users */
@@ -166,7 +165,7 @@ void unsubscribe(unordered_map<string, int> &id_sock,
     }
     active_users[topic].erase(active_users[topic].begin() + index);
 }
-
+/* send remaining messages for a topic if has SF_ON */
 void send_stored_messages(unordered_map<string, int> &id_sock,
                           unordered_map<string, vector<news_status>> &user_subscription,
                           unordered_map<string, vector<tcp_msg>> &queue_msg,
@@ -177,15 +176,18 @@ void send_stored_messages(unordered_map<string, int> &id_sock,
     int test_send;
     char buffer[BUFLEN];
 
-    for (auto element : user_subscription[user_id]) {
-        if (element.topic == topic) {
-            last_message = element.last_msg;
-            break;
-        }
-        index++;
+    index = get_index_of_topic(user_subscription, user_id, topic);
+    if (index < 0) {
+        return;
     }
 
+    if (user_subscription[user_id][index].sf == SF_OFF)
+        return;
+
+    last_message = user_subscription[user_id][index].last_msg;
     for (int i = last_message; i < len; i++) {
+        memset(buffer, 0, BUFLEN);
+        memcpy(buffer, &queue_msg[topic][i], sizeof(tcp_msg));
         test_send = send(id_sock[user_id], buffer, sizeof(buffer), 0);
         if (test_send < 0) {
             perror("Can't send stored messages");
@@ -194,13 +196,50 @@ void send_stored_messages(unordered_map<string, int> &id_sock,
     user_subscription[user_id][index].last_msg = len;
 }
 
-// void send_message_to_active_users(unordered_map<string,
-//                                                 vector<int>> active_users,
-//                                   string topic, tcp_msg ready_to_send, char *buffer) {
-//     /* send to all users */
-//     int check_send;
-//     memcpy(buffer, &ready_to_send, sizeof(ready_to_send));
-//     for (int k = 0; k < active_users[topic].size(); k++) {
-//         check_send = send(active_users[topic][k], buffer, BUFLEN, 0);
-//     }
-// }
+void print_tables(unordered_map<string, int> id_sock,
+                  unordered_map<string, vector<news_status>> user_subscription,
+                  unordered_map<string, vector<tcp_msg>> queue_msg,
+                  unordered_map<string, vector<int>> active_users) {
+    cout << "id_sock:\n";
+    for (auto element : id_sock) {
+        cout << element.first << " " << element.second << endl;
+    }
+    cout << endl
+         << endl;
+    cout << "user_subscription:\n";
+
+    for (auto element : user_subscription) {
+        cout << element.first << ": ";
+        for (auto el : element.second) {
+            cout << el.last_msg << " " << el.sf << " " << el.topic << " -> ";
+            // printf("%d %d -> ", el.last_msg, el.sf);
+        }
+        cout << endl;
+    }
+
+    cout << endl
+         << endl;
+    cout << "queue_msg:\n";
+
+    for (auto element : queue_msg) {
+        cout << element.first << ": ";
+        for (auto el : element.second) {
+            //cout << el.topic << " " << el.type << " " << el.payload << " -> ";
+            printf("%s %d -> ", el.topic, el.type);
+        }
+        cout << endl;
+    }
+    cout << endl
+         << endl;
+    cout << "active_users:\n";
+
+    for (auto element : active_users) {
+        cout << element.first << ": ";
+        for (auto el : element.second) {
+            cout << el << " -> ";
+        }
+        cout << endl;
+    }
+    cout << endl
+         << endl;
+}

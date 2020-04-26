@@ -12,15 +12,15 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include "helpers.h"
 #include <bits/stdc++.h> 
 
 using namespace std;
 
 #define BUFLEN 1600
-#define TOPIC_LEN 51
+#define TOPIC_LEN 50
 #define MAX_CLIENTS 128
 
 #define ONLINE 1
@@ -38,12 +38,12 @@ using namespace std;
 #define STRING 3
 
 typedef struct tcp_msg {
-    uint32_t udp_ip;
+    char udp_ip[16];
     uint16_t udp_port;
     char topic[TOPIC_LEN];
     /*INT SHORT_REAL FLOAT STRING */
     uint8_t type;
-    char payload[1501];
+    char payload[1500];
 } tcp_msg;
 
 typedef struct user_msg {

@@ -1,7 +1,7 @@
 #include "client_helper.h"
 
 int main(int argc, char *argv[]) {
-    int sockfd, ret, received_data, send_test;;
+    int sockfd, ret, received_data, send_test;
     struct sockaddr_in serv_addr;
     char buffer[BUFLEN];
     tcp_msg recv_message;
@@ -35,9 +35,9 @@ int main(int argc, char *argv[]) {
 
     send_test = send(sockfd, buffer, sizeof(buffer), 0);
 
-    fd_set read_fds; // multimea de citire folosita in select()
-    fd_set tmp_fds;  // multime folosita temporar
-    int fdmax;       // valoare maxima fd din multimea read_fds
+    fd_set read_fds;
+    fd_set tmp_fds;
+    int fdmax;
     fdmax = sockfd;
 
     FD_ZERO(&read_fds);
@@ -63,6 +63,7 @@ int main(int argc, char *argv[]) {
             fgets(buffer, BUFLEN - 1, stdin);
 
             if (!strcmp(buffer, "exit\n")) {
+                cout << "Exiting..\n";
                 break;
             } else {
                 is_correct = tokenize_command(buffer, message);
@@ -72,8 +73,6 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            printf("command: %d, topic: %s, sf: %d\n", message.type, message.topic, message.sf);
-
             // send message to server
             memset(buffer, 0, BUFLEN);
             memcpy(buffer, &message, sizeof(message));
@@ -81,6 +80,12 @@ int main(int argc, char *argv[]) {
             if (send_test < 0) {
                 perror("Can't send message");
             }
+
+            /* executed command */
+            if (message.type == SUBSCRIBE)
+                printf("Subscribed to %s with sf = %d.\n", message.topic, message.sf);
+            else
+                printf("Unsubscribed from %s.\n", message.topic);
         }
 
         if (FD_ISSET(sockfd, &tmp_fds)) {
@@ -97,16 +102,15 @@ int main(int argc, char *argv[]) {
             memset(&recv_message, 0, sizeof(tcp_msg));
             memcpy(&recv_message, buffer, sizeof(recv_message));
 
-            // printf("%d:%d - %s - %s - %s", recv_message.udp_ip, recv_message.udp_port, recv_message.topic, );
-            // printf("rec: %s \n", buffer);
+            if (!print_received_message(recv_message)) {
+                // if (!test(&recv_message)) {
+
+                cout << "Wrong message\n";
+            }
         }
     }
 
     close(sockfd);
 
     return 0;
-}
-
-void decode_message() {
-
 }
