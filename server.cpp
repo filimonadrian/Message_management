@@ -17,8 +17,10 @@ int main(int argc, char *argv[]) {
     /* <user_id> and <socket> to update file descriptor*/
     unordered_map<string, int> id_sock;
 
-    /*<user_id> and <vector_news> with topic, sf, and index of last send message*/
-    /* used to check if user wants all informations about topic; keep last message sent */
+    /*<user_id> and <vector_news> with topic, 
+    sf, and index of last send message*/
+    /* used to check if user wants all informations about topic;
+     keep last message sent */
     unordered_map<string, vector<news_status>> user_subscription;
 
     /*<topic_name> and vector of messages ready to send*/
@@ -28,8 +30,8 @@ int main(int argc, char *argv[]) {
     unordered_map<string, vector<int>> active_users;
 
     fd_set read_fds;
-    fd_set tmp_fds; 
-    int fdmax;       // max fd from read_fds
+    fd_set tmp_fds;
+    int fdmax; // max fd from read_fds
 
     if (argc < 2) {
         usage(argv[0]);
@@ -122,7 +124,8 @@ int main(int argc, char *argv[]) {
                     memset(buffer, 0, BUFLEN);
                     memset(&from_station, 0, sizeof(from_station));
                     source_len = sizeof(from_station);
-                    received_data = recvfrom(udp_sock, buffer, sizeof(udp_msg), 0, (struct sockaddr *)&from_station, &source_len);
+                    received_data = recvfrom(udp_sock, buffer, sizeof(udp_msg),
+                                             0, (struct sockaddr *)&from_station, &source_len);
                     if (received_data < 0) {
                         perror("Can't receive udp message");
                     }
@@ -194,18 +197,16 @@ int main(int argc, char *argv[]) {
 
                     /*if user_id doesn't exist, create a new entry */
                     if (id_sock.find(user_id) == id_sock.end()) {
-
                         id_sock.insert({user_id, newsockfd});
-                        // user_subscription.insert(make_pair(user_id, vector<news_status>()));
-                        /*same shit */
                         user_subscription.emplace(user_id, vector<news_status>());
 
-                        /*else the user_id is back online -->update sockfd, tick as active user, send messages */
+                        /*else the user_id is back online 
+                        -->update sockfd, tick as active user, send messages */
                     } else {
 
                         // verify if user is online and wants to connect
                         /*if user is online */
-                        if (id_sock[user_id] != 0) {
+                        if (id_sock[user_id] != OFFLINE) {
                             close(newsockfd);
                             break;
                         }
@@ -254,10 +255,10 @@ int main(int argc, char *argv[]) {
                     } else if (received_data == 0) {
                         /* the connection has ended */
                         string user_id = get_id_for_socket(i, id_sock);
-                        
+
                         disconnect_user(id_sock, user_subscription, queue_msg, active_users, i);
                         /* socket = 0 ===> user is offline */
-                        id_sock[get_id_for_socket(i, id_sock)] = 0;
+                        id_sock[get_id_for_socket(i, id_sock)] = OFFLINE;
 
                         // print_tables(id_sock, user_subscription, queue_msg, active_users);
 

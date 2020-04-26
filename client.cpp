@@ -83,7 +83,8 @@ int main(int argc, char *argv[]) {
 
             /* executed command */
             if (message.type == SUBSCRIBE)
-                printf("Subscribed to %s with sf = %d.\n", message.topic, message.sf);
+                printf("Subscribed to %s with sf = %d.\n",
+                       message.topic, message.sf);
             else
                 printf("Unsubscribed from %s.\n", message.topic);
         }

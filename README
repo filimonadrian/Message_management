@@ -1,0 +1,95 @@
+=====================================Tema-2====================================
+
+Nume: Filimon Costel-Adrian
+Grupa: 324CC
+
+=====================================Fisiere===================================
+
+Am incercat o modularizare cat mai buna a codului, de aceea am creat mai multe 
+fisiere:
+
+    -> server_helper.cpp si server_helper.h contin functiile pentru "bucataria
+    interna": subscribe, unsubscribe, find
+     
+    -> client_helper.cpp si client_helper.h contin functiile pentru clienti
+    -> general_includes.h : include-urile si pentru client, si pentru server
+    -> client.cpp: main-ul pentru clienti
+    -> server.cpp: main-ul pentru server
+
+====================================Stocare====================================
+
+Pentru a putea realiza operatiile intr-un timp cat mai scurt, am folosit 4
+structuri de tipul unordered_map predefinite in c++;
+
+id_sock: contine id_ul fiecarui user si socketul pe care este conectat. Daca nu
+este online, valoarea socket-ului va fi 0.
+ _ _ _ _ _ _ _ _ 
+|user_id |socket|
+|________|______|
+
+user_subscription: pentru fiecare user, se retine un vector ce contine: topicul,
+    ultimul mesaj primit de la acel topic si sf-ul.
+ ________________________________________________________________
+|user_id |<last_message, sf, topic>, <last_message, sf, topic>...|
+|________|_______________________________________________________|
+
+queue_msg: pentru fiecare topic, toate mesajele primite vreodata de la clientul
+    UDP.
+ ___________________________________
+| topic  |<tcp_msg1>, <tcp_msg2>...|
+|________|_________________________|
+
+active_users: pentru fiecare topic, socketii activi pe care se pot trimite
+    mesaje
+ ___________________________________
+| topic  | <socket1>, <socket2>... |
+|________|_________________________|
+
+=================================Implementare==================================
+SERVER:
+
+Daca primesc mesaje pe socketul de udp, il salvez intr-o structura, extrag ip-ul
+si portul de unde l-am primit si il trimit direct la client. Parsarea mesajului
+primit NU se face direct in server pentru a economisi timp; se face direct la
+user. Daca topicul nu exista, creez o noua intrare in cele 2 tabele ce au 
+cheia topic, altfel trimit mesajul tuturor userilor activi. Mesajul se pune
+in queue_msg si NU SE VA STERGE(Daca un user va da subscribe la acest topic, 
+va primi toate mesajele de pe acel topic).
+
+Daca se incearca o conectare pe socketul de TCP, acesta o va accepta si
+imediat asteapta sa primeasca un mesaj de pe socketul primit care sa contina 
+ID-ul utilizatorului. Daca acest id exista deja(id_sock), se va face update la,
+altfel se va adauga o noua intrare in tabela. OBS: Daca user-ul are un socket
+diferit de 0, inseamna ca acesta este deja conectat si se va refuza reconectarea
+In cazul in care exista id-ul si user-ul era offline, acesta va primi toate 
+mesajele ce s-au trimis cat timp el a fost deconectat. 
+
+Daca se primesc date de la un utilizator TCP:
+    -> daca este o cerere de inchidere a conexiunii, se va face update pentru 
+        fiecare topic(last message).
+    -> daca se primeste SUBSCRIBE se verifica daca user-ul este deja abonat la 
+    acel topic. Daca nu este abonat si sunt deja mesaje pe acel topic, user-ul 
+    va primi toate mesajele. Daca se face UNSUBSCRIBE, se sterge topicul din
+    din lista de abonamente si socket ul clientului pentru a nu mai fi activ
+    pentru topicul respectiv.
+
+CLIENT:
+
+Se verifica daca user-ul foloseste comenzi valida: daca este o comanda valida, 
+se va afisa un mesaj. Aici se face si verificarea ca mesajul primit de la
+server este corect(bitul de semn sa fie 0 sau 1) si se face parsarea
+propriu-zisa. 
+
+
+==================================Observatii===================================
+
+1) Coding style: Desi am incercat sa scriu cat mai ingrijit, nu am reusit sa 
+respect limita de 80 de caractere/rand, avand in vedere numarul mare de
+structuri imbricate(mai ales in main-ul serverului).
+
+2) Verificare: Am rulat tema cu scripturile puse la dispozitie, 1 server si 15
+clienti si nu am observat vreo greseala in output. Singura problema ar fi ca
+la un flux constant de date, se afiseaza si pentru a da o comanda, nu se
+afiseaza comanda, dar daca aceasta este scrisa corect, la enter se executa. 
+
+

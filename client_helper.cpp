@@ -1,7 +1,8 @@
 #include "client_helper.h"
 
 void usage(char *file) {
-    fprintf(stderr, "Usage: %s client_id(10 caract) server_address server_port\n", file);
+    fprintf(stderr,
+           "Usage: %s client_id(10 caract) server_address server_port\n", file);
     exit(0);
 }
 
@@ -22,7 +23,7 @@ bool tokenize_command(char buffer[], user_msg &message) {
             if (strlen(token) > 50) {
                 return false;
             }
-            
+
             strcpy(message.topic, token);
 
             /* if message is UNSUBSCRIBE, delete the last character(\n) */
@@ -49,7 +50,6 @@ bool tokenize_command(char buffer[], user_msg &message) {
     }
     return true;
 }
-
 
 bool print_received_message(tcp_msg message) {
 
@@ -91,7 +91,7 @@ bool print_received_message(tcp_msg message) {
         if (message.payload[0] > 1) {
             return false;
         }
-        
+
         /* first byte is for sign */
         real_num = ntohl(*(uint32_t *)(message.payload + 1));
         real_num /= pow(10, message.payload[5]);
@@ -104,7 +104,7 @@ bool print_received_message(tcp_msg message) {
         cout << message.topic << " - "
              << "FLOAT"
              << " - ";
-        printf ("%f\n", real_num);
+        printf("%f\n", real_num);
         break;
 
     case STRING:
@@ -117,4 +117,3 @@ bool print_received_message(tcp_msg message) {
     }
     return true;
 }
-
